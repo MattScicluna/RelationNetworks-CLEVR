@@ -37,7 +37,7 @@ def extract_features_rl(data, quest_inject_index, extr_layer_idx, lstm_emb_size,
     if hasattr(model, 'module'):
         model = model.module
 
-    if extr_layer_idx>=0:
+    if extr_layer_idx >= 0:
         lay = 'g_layers'
         progress_bar.set_description('FEATURES EXTRACTION from {}, {}-set, input of g_fc{} layer'.format(lay, args.set, extr_layer_idx+1))
         extraction_layer = model._modules.get('rl')._modules.get(lay)[extr_layer_idx]
@@ -72,7 +72,7 @@ def extract_features_rl(data, quest_inject_index, extr_layer_idx, lstm_emb_size,
 
             maxf = maxf.data.cpu().numpy()
             avgf = avgf.data.cpu().numpy()
-        elif lay=='conv':
+        elif lay == 'conv':
             bs = o.size()[0]
             x_ = o
             #x_ = F.normalize(x_, p=2, dim=1)
@@ -120,15 +120,16 @@ def extract_features_rl(data, quest_inject_index, extr_layer_idx, lstm_emb_size,
 
     h.remove()
 
-    if lay=='g_layers':
+    if lay == 'g_layers':
         pickle.dump(max_features, files_dict['max_features'])
         pickle.dump(avg_features, files_dict['avg_features'])
-    elif lay=='conv':
+    elif lay == 'conv':
         #pickle.dump(flatconv_features, files_dict['flatconv_features'])
         pickle.dump(avgconv_features, files_dict['avgconv_features'])
         pickle.dump(maxconv_features, files_dict['maxconv_features'])
 
-def reload_loaders(clevr_dataset, bs, state_description = False): #TODO here: add custom collect function
+
+def reload_loaders(clevr_dataset, bs, state_description=False): #TODO here: add custom collect function
     if not state_description:
 
         # Initialize Clevr dataset loader
@@ -140,15 +141,16 @@ def reload_loaders(clevr_dataset, bs, state_description = False): #TODO here: ad
                                        shuffle=False, num_workers=1, collate_fn=utils.collate_samples_images_state_description, drop_last=True)
     return clevr_loader
 
+
 def initialize_dataset(clevr_dir, train=False, state_description=True):
     if not state_description:
         test_transforms = transforms.Compose([transforms.Resize((128, 128)),
                                           transforms.ToTensor()])
                                           
-        clevr_dataset_test = ClevrDatasetImages(clevr_dir, train, test_transforms)
+        clevr_dataset_test = ClevrDatasetImages(clevr_dir, args.exp_dir, train, test_transforms)
         
     else:
-        clevr_dataset_test = ClevrDatasetImagesStateDescription(clevr_dir, False)
+        clevr_dataset_test = ClevrDatasetImagesStateDescription(clevr_dir, args.exp_dir, False)
     
     return clevr_dataset_test 
 
@@ -168,20 +170,19 @@ def main(args):
     args.cuda = not args.no_cuda and torch.cuda.is_available()
 
     # Initialize CLEVR Loader
-    clevr_dataset_test  = initialize_dataset(args.clevr_dir, True if args.set=='train' else False, hyp['state_description'])
+    clevr_dataset_test = initialize_dataset(args.clevr_dir, True if args.set == 'train' else False, hyp['state_description'])
     clevr_feat_extraction_loader = reload_loaders(clevr_dataset_test, args.batch_size, hyp['state_description'])
 
-    args.features_dirs = './features'
+    args.features_dirs = '{}/features'.format(args.exp_dir)
     if not os.path.exists(args.features_dirs):
         os.makedirs(args.features_dirs)
 
-    
-    files_dict={}
-    if args.extr_layer_idx>=0: #g_layers features
+    files_dict = {}
+    if args.extr_layer_idx >= 0:  # g_layers features
         files_dict['max_features'] = \
-            open(os.path.join(args.features_dirs, '{}_2S-RN_max_features.pickle'.format(args.set,args.extr_layer_idx)),'wb')
+            open(os.path.join(args.features_dirs, '{}_2S-RN_max_features.pickle'.format(args.set, args.extr_layer_idx)), 'wb')
         files_dict['avg_features'] = \
-            open(os.path.join(args.features_dirs, '{}_2S-RN_avg_features.pickle'.format(args.set,args.extr_layer_idx)),'wb')
+            open(os.path.join(args.features_dirs, '{}_2S-RN_avg_features.pickle'.format(args.set, args.extr_layer_idx)), 'wb')
     else:
         '''files_dict['flatconv_features'] = \
             open(os.path.join(args.features_dirs, '{}_flatconv_features.pickle'.format(args.set)),'wb')'''
@@ -191,7 +192,7 @@ def main(args):
             open(os.path.join(args.features_dirs, '{}_RN_max_features.pickle'.format(args.set)),'wb')
 
     print('Building word dictionaries from all the words in the dataset...')
-    dictionaries = utils.build_dictionaries(args.clevr_dir)
+    dictionaries = utils.build_dictionaries(args.clevr_dir, args.exp_dir)
     print('Word dictionary completed!')
     args.qdict_size = len(dictionaries[0])
     args.adict_size = len(dictionaries[1])
@@ -222,29 +223,38 @@ def main(args):
     model.load_state_dict(checkpoint)
     print('==> loaded checkpoint {}'.format(args.checkpoint))
 
+    pdb.set_trace()
     extract_features_rl(clevr_feat_extraction_loader, hyp['question_injection_position'], args.extr_layer_idx, hyp['lstm_hidden'], files_dict, model, args)
 
 
 if __name__ == '__main__':
+    checkpoint_default = '/network/tmp1/sciclunm/clevr_exp/teacher_model/RN_epoch_265.pth'
+    clevr_default_dir = '/network/data1/clevr-cogent/CLEVR_CoGenT_v1.0'
+    exp_dir = '/network/tmp1/sciclunm/clevr_exp'
+    if not os.path.exists(exp_dir):
+        os.makedirs(exp_dir)
+
     # Training settings
     parser = argparse.ArgumentParser(description='PyTorch Relational-Network CLEVR Feature Extraction')
-    parser.add_argument('--checkpoint', type=str,
+    parser.add_argument('--checkpoint', type=str, default=checkpoint_default,
                         help='model checkpoint to use for feature extraction')
-    parser.add_argument('--model', type=str, default='original-fp',
+    parser.add_argument('--model', type=str, default='original-sd',
                         help='which model is used to train the network')
-    parser.add_argument('--clevr-dir', type=str, default='.',
+    parser.add_argument('--clevr-dir', type=str, default=clevr_default_dir,
                         help='base directory of CLEVR dataset')
+    parser.add_argument('--exp-dir', type=str, default=exp_dir,
+                        help='experiment directory')
     parser.add_argument('--batch-size', type=int, default=60, metavar='N',
                         help='input batch size for training (default: 60)')
     parser.add_argument('--no-cuda', action='store_true', default=False,
                         help='disables CUDA training')
-    parser.add_argument('--set',type=str, choices=['train','test'], default='test',
+    parser.add_argument('--set', type=str, choices=['train', 'test'], default='train',
                         help='Extract features from training or test set')
     parser.add_argument('--config', type=str, default='config.json',
                         help='configuration file for hyperparameters loading')
     parser.add_argument('--question-injection', type=int, default=-1, 
                         help='At which stage of g function the question should be inserted (0 to insert at the beginning, as specified in DeepMind model, -1 to use configuration value)')
-    parser.add_argument('--extr-layer-idx', type=int, default=2, 
+    parser.add_argument('--extr-layer-idx', type=int, default=4,
                         help='From which stage of g function features are extracted')
     args = parser.parse_args()
     main(args)

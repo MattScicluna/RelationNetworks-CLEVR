@@ -26,6 +26,7 @@ from model import RN
 
 import pdb
 
+
 def train(data, model, optimizer, epoch, args):
     model.train()
 
@@ -37,6 +38,7 @@ def train(data, model, optimizer, epoch, args):
 
         # forward and backward pass
         optimizer.zero_grad()
+
         output = model(img, qst)
         loss = F.nll_loss(output, label)
         loss.backward()
@@ -177,7 +179,8 @@ def reload_loaders(clevr_dataset_train, clevr_dataset_test, train_bs, test_bs, s
                                        shuffle=False, collate_fn=utils.collate_samples_state_description)
     return clevr_train_loader, clevr_test_loader
 
-def initialize_dataset(clevr_dir, dictionaries, state_description=True):
+
+def initialize_dataset(clevr_dir, exp_dir, dictionaries, state_description=True):
     if not state_description:
         train_transforms = transforms.Compose([transforms.Resize((128, 128)),
                                            transforms.Pad(8),
@@ -187,17 +190,15 @@ def initialize_dataset(clevr_dir, dictionaries, state_description=True):
         test_transforms = transforms.Compose([transforms.Resize((128, 128)),
                                           transforms.ToTensor()])
                                           
-        clevr_dataset_train = ClevrDataset(clevr_dir, True, dictionaries, train_transforms)
-        clevr_dataset_test = ClevrDataset(clevr_dir, False, dictionaries, test_transforms)
+        clevr_dataset_train = ClevrDataset(clevr_dir, exp_dir, True, dictionaries, train_transforms)
+        clevr_dataset_test = ClevrDataset(clevr_dir, exp_dir, False, dictionaries, test_transforms)
         
     else:
-        clevr_dataset_train = ClevrDatasetStateDescription(clevr_dir, True, dictionaries)
-        clevr_dataset_test = ClevrDatasetStateDescription(clevr_dir, False, dictionaries)
+        clevr_dataset_train = ClevrDatasetStateDescription(clevr_dir, exp_dir, True, dictionaries)
+        clevr_dataset_test = ClevrDatasetStateDescription(clevr_dir, exp_dir, False, dictionaries)
     
     return clevr_dataset_train, clevr_dataset_test 
         
-    
-
 
 def main(args):
     #load hyperparameters from configuration file
@@ -211,9 +212,10 @@ def main(args):
 
     print('Loaded hyperparameters from configuration {}, model: {}: {}'.format(args.config, args.model, hyp))
 
-    args.model_dirs = './model_{}_drop{}_bstart{}_bstep{}_bgamma{}_bmax{}_lrstart{}_'+ \
+    args.model_dirs = '{}/model_{}_drop{}_bstart{}_bstep{}_bgamma{}_bmax{}_lrstart{}_'+ \
                       'lrstep{}_lrgamma{}_lrmax{}_invquests-{}_clipnorm{}_glayers{}_qinj{}_fc1{}_fc2{}'
     args.model_dirs = args.model_dirs.format(
+                        args.exp_dir,
                         args.model, hyp['dropout'], args.batch_size, args.bs_step, args.bs_gamma, 
                         args.bs_max, args.lr, args.lr_step, args.lr_gamma, args.lr_max,
                         args.invert_questions, args.clip_norm, hyp['g_layers'], hyp['question_injection_position'],
@@ -224,12 +226,12 @@ def main(args):
     args_str = str(args)
     hyp_str = str(hyp)
     all_configuration = args_str+'\n\n'+hyp_str
-    filename = os.path.join(args.model_dirs,'config.txt')
-    with open(filename,'w') as config_file:
+    filename = os.path.join(args.model_dirs, 'config.txt')
+    with open(filename, 'w') as config_file:
         config_file.write(all_configuration)
 
-    args.features_dirs = './features'
-    args.test_results_dir = './test_results'
+    args.features_dirs = '{}/features'.format(args.exp_dir)
+    args.test_results_dir = '{}/test_results'.format(args.exp_dir)
     if not os.path.exists(args.test_results_dir):
         os.makedirs(args.test_results_dir)
 
@@ -240,11 +242,11 @@ def main(args):
         torch.cuda.manual_seed(args.seed)
 
     print('Building word dictionaries from all the words in the dataset...')
-    dictionaries = utils.build_dictionaries(args.clevr_dir)
+    dictionaries = utils.build_dictionaries(args.clevr_dir, args.exp_dir)
     print('Word dictionary completed!')
 
     print('Initializing CLEVR dataset...')
-    clevr_dataset_train, clevr_dataset_test  = initialize_dataset(args.clevr_dir, dictionaries, hyp['state_description'])
+    clevr_dataset_train, clevr_dataset_test = initialize_dataset(args.clevr_dir, args.exp_dir, dictionaries, hyp['state_description'])
     print('CLEVR dataset initialized!')
 
     # Build the model
@@ -277,7 +279,6 @@ def main(args):
             print('==> loaded checkpoint {}'.format(filename))
             start_epoch = int(re.match(r'.*epoch_(\d+).pth', args.resume).groups()[0]) + 1
 
-    
     if args.conv_transfer_learn:
         if os.path.isfile(args.conv_transfer_learn):
             # TODO: there may be problems caused by pytorch issue #3805 if using DataParallel
@@ -333,8 +334,7 @@ def main(args):
         scheduler.last_epoch = start_epoch
         print('Training ({} epochs) is starting...'.format(args.epochs))
         for epoch in progress_bar:
-            
-            if(((args.bs_max > 0 and bs < args.bs_max) or args.bs_max < 0 ) and (epoch % args.bs_step == 0 or epoch == start_epoch)):
+            if ((args.bs_max > 0 and bs < args.bs_max) or args.bs_max < 0 ) and (epoch % args.bs_step == 0 or epoch == start_epoch):
                 bs = math.floor(args.batch_size * (args.bs_gamma ** (epoch // args.bs_step)))
                 if bs > args.bs_max and args.bs_max > 0:
                     bs = args.bs_max
@@ -346,7 +346,7 @@ def main(args):
                 #scheduler = lr_scheduler.CosineAnnealingLR(optimizer, step, min_lr)
                 print('Dataset reinitialized with batch size {}'.format(bs))
             
-            if((args.lr_max > 0 and scheduler.get_lr()[0]<args.lr_max) or args.lr_max < 0):
+            if ((args.lr_max > 0 and scheduler.get_lr()[0]<args.lr_max) or args.lr_max < 0):
                 scheduler.step()
                     
             print('Current learning rate: {}'.format(optimizer.param_groups[0]['lr']))
@@ -365,12 +365,17 @@ def main(args):
 
 
 if __name__ == '__main__':
+    clevr_default_dir = '/network/data1/clevr-cogent/CLEVR_CoGenT_v1.0'
+    exp_dir = '/network/tmp1/sciclunm/clevr_exp'
+    if not os.path.exists(exp_dir):
+        os.makedirs(exp_dir)
+
     # Training settings
     parser = argparse.ArgumentParser(description='PyTorch Relational-Network CLEVR')
-    parser.add_argument('--batch-size', type=int, default=640, metavar='N',
-                        help='input batch size for training (default: 640)')
-    parser.add_argument('--test-batch-size', type=int, default=640,
-                        help='input batch size for training (default: 640)')
+    parser.add_argument('--batch-size', type=int, default=256, metavar='N',
+                        help='input batch size for training (default: 256)')
+    parser.add_argument('--test-batch-size', type=int, default=256,
+                        help='input batch size for training (default: 256)')
     parser.add_argument('--epochs', type=int, default=350, metavar='N',
                         help='number of epochs to train (default: 350)')
     parser.add_argument('--lr', type=float, default=0.000005, metavar='LR',
@@ -385,9 +390,11 @@ if __name__ == '__main__':
                         help='how many batches to wait before logging training status')
     parser.add_argument('--resume', type=str,
                         help='resume from model stored')
-    parser.add_argument('--clevr-dir', type=str, default='.',
+    parser.add_argument('--clevr-dir', type=str, default=clevr_default_dir,
                         help='base directory of CLEVR dataset')
-    parser.add_argument('--model', type=str, default='original-fp',
+    parser.add_argument('--exp-dir', type=str, default=exp_dir,
+                        help='experiment directory')
+    parser.add_argument('--model', type=str, default='original-sd',
                         help='which model is used to train the network')
     parser.add_argument('--no-invert-questions', action='store_true', default=False,
                         help='invert the question word indexes for LSTM processing')

@@ -10,22 +10,23 @@ import utils
 import torch
 
 class ClevrDataset(Dataset):
-    def __init__(self, clevr_dir, train, dictionaries, transform=None):
+    def __init__(self, clevr_dir, exp_dir, train, dictionaries, transform=None):
         """
         Args:
             clevr_dir (string): Root directory of CLEVR dataset
-			train (bool): Tells if we are loading the train or the validation datasets
-            transform (callable, optional): Optional transform to be applied
-                on a sample.
+            train (bool): Tells if we are loading the train or the validation datasets
+            transform (callable, optional): Optional transform to be applied on a sample.
         """
         if train:
-            quest_json_filename = os.path.join(clevr_dir, 'questions', 'CLEVR_train_questions.json')
-            self.img_dir = os.path.join(clevr_dir, 'images', 'train')
+            quest_json_filename = os.path.join(clevr_dir, 'questions', 'CLEVR_trainA_questions.json')
+            cached_questions = os.path.join(exp_dir, 'questions', 'CLEVR_trainA_questions.pkl')
+            self.img_dir = os.path.join(clevr_dir, 'images', 'trainA')
         else:
-            quest_json_filename = os.path.join(clevr_dir, 'questions', 'CLEVR_val_questions.json')
-            self.img_dir = os.path.join(clevr_dir, 'images', 'val')
+            quest_json_filename = os.path.join(clevr_dir, 'questions', 'CLEVR_valA_questions.json')
+            cached_questions = os.path.join(exp_dir, 'questions', 'CLEVR_valA_questions.pkl')
+            self.img_dir = os.path.join(clevr_dir, 'images', 'valA')
 
-        cached_questions = quest_json_filename.replace('.json', '.pkl')
+        #cached_questions = quest_json_filename.replace('.json', '.pkl')
         if os.path.exists(cached_questions):
             print('==> using cached questions: {}'.format(cached_questions))
             with open(cached_questions, 'rb') as f:
@@ -70,18 +71,26 @@ class ClevrDataset(Dataset):
         
         return sample
 
+
 class ClevrDatasetStateDescription(Dataset):
-    def __init__(self, clevr_dir, train, dictionaries):
+    def __init__(self, clevr_dir, exp_dir, train, dictionaries):
+
+        if not os.path.exists(os.path.join(exp_dir, 'scenes')):
+            os.mkdir(os.path.join(exp_dir, 'scenes'))
         
         if train:
-            quest_json_filename = os.path.join(clevr_dir, 'questions', 'CLEVR_train_questions.json')
-            scene_json_filename = os.path.join(clevr_dir, 'scenes', 'CLEVR_train_scenes.json')
+            quest_json_filename = os.path.join(clevr_dir, 'questions', 'CLEVR_trainA_questions.json')
+            cached_questions = os.path.join(exp_dir, 'questions', 'CLEVR_trainA_questions.pkl')
+            scene_json_filename = os.path.join(clevr_dir, 'scenes', 'CLEVR_trainA_scenes.json')
+            cached_scenes = os.path.join(exp_dir, 'scenes', 'CLEVR_trainA_scenes.json')
         else:
-            quest_json_filename = os.path.join(clevr_dir, 'questions', 'CLEVR_val_questions.json')
-            scene_json_filename = os.path.join(clevr_dir, 'scenes', 'CLEVR_val_scenes.json')
+            quest_json_filename = os.path.join(clevr_dir, 'questions', 'CLEVR_valA_questions.json')
+            cached_questions = os.path.join(exp_dir, 'questions', 'CLEVR_valA_questions.pkl')
+            scene_json_filename = os.path.join(clevr_dir, 'scenes', 'CLEVR_valA_scenes.json')
+            cached_scenes = os.path.join(exp_dir, 'scenes', 'CLEVR_valA_scenes.json')
 
-        cached_questions = quest_json_filename.replace('.json', '.pkl')
-        cached_scenes = scene_json_filename.replace('.json', '.pkl')
+        #cached_questions = quest_json_filename.replace('.json', '.pkl')
+        #cached_scenes = scene_json_filename.replace('.json', '.pkl')
         if os.path.exists(cached_questions):
             print('==> using cached questions: {}'.format(cached_questions))
             with open(cached_questions, 'rb') as f:
@@ -137,8 +146,7 @@ class ClevrDatasetStateDescription(Dataset):
         current_question = self.questions[idx]
         scene_idx = current_question['image_index']
         obj = self.objects[scene_idx]
-        
-        
+
         question = utils.to_dictionary_indexes(self.dictionaries[0], current_question['question'])
         answer = utils.to_dictionary_indexes(self.dictionaries[1], current_question['answer'])
         '''if self.dictionaries[2][answer[0]]=='color':
@@ -152,6 +160,7 @@ class ClevrDatasetStateDescription(Dataset):
         
         return sample
 
+
 class ClevrDatasetImages(Dataset):
     """
     Loads only images from the CLEVR dataset
@@ -163,7 +172,7 @@ class ClevrDatasetImages(Dataset):
         :param mode: Specifies if we want to read in val, train or test folder
         :param transform: Optional transform to be applied on a sample.
         """
-        self.mode = 'train' if train else 'val'
+        self.mode = 'trainA' if train else 'valA'
         self.img_dir = os.path.join(clevr_dir, 'images', self.mode)
         self.transform = transform
 
@@ -172,7 +181,7 @@ class ClevrDatasetImages(Dataset):
 
     def __getitem__(self, idx):
         padded_index = str(idx).rjust(6, '0')
-        img_filename = os.path.join(self.img_dir, 'CLEVR_{}_{}.png'.format(self.mode,padded_index))
+        img_filename = os.path.join(self.img_dir, 'CLEVR_{}_{}.png'.format(self.mode, padded_index))
         image = Image.open(img_filename).convert('RGB')
 
         if self.transform:
@@ -180,9 +189,10 @@ class ClevrDatasetImages(Dataset):
 
         return image
 
+
 class ClevrDatasetImagesStateDescription(ClevrDatasetStateDescription):
-    def __init__(self, clevr_dir, train):
-        super().__init__(clevr_dir, train, None)
+    def __init__(self, clevr_dir, exp_dir, train):
+        super().__init__(clevr_dir, exp_dir, train, None)
 
     def __len__(self):
         return len(self.objects)
